@@ -1,4 +1,4 @@
-// src/app/page.tsx
+// app/page.tsx
 "use client"; // Важливо: цей компонент має бути клієнтським
 import dynamic from 'next/dynamic';
 
