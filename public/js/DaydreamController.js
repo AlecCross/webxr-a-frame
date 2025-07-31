@@ -11,50 +11,88 @@
         constructor() {
             this.connected = false;
             this.controller = null;
-            this.onChangeFunc = function() {}; // Ініціалізуємо функцію
+            this.onChangeFunc = function() {};
+            console.log('DaydreamController: Constructor called.'); // Додав лог
         };
 
         async auth() {
             var scope = this;
-            return new Promise(async (resolve) => {
-                var service = await scope.controller.getPrimaryService( 0xfe55 );
-                var rollingCodes = await service.getCharacteristic('00000003-1000-1000-8000-00805f9b34fb');
-                var enterCodes = await service.getCharacteristic('00000002-1000-1000-8000-00805f9b34fb');
-                var rollingCode = await rollingCodes.readValue();
+            console.log('DaydreamController: auth() started.'); // Додав лог
+            return new Promise(async (resolve, reject) => { // Додав reject для промісу
+                try {
+                    console.log('DaydreamController: Getting primary service 0xfe55...'); // Додав лог
+                    var service = await scope.controller.getPrimaryService( 0xfe55 );
+                    console.log('DaydreamController: Got primary service. Getting characteristic 00000003...'); // Додав лог
+                    var rollingCodes = await service.getCharacteristic('00000003-1000-1000-8000-00805f9b34fb');
+                    console.log('DaydreamController: Got characteristic 00000003. Getting characteristic 00000002...'); // Додав лог
+                    var enterCodes = await service.getCharacteristic('00000002-1000-1000-8000-00805f9b34fb');
+                    console.log('DaydreamController: Got characteristic 00000002. Reading rolling code...'); // Додав лог
+                    var rollingCode = await rollingCodes.readValue();
+                    console.log('DaydreamController: Read rolling code. Value:', Array.from(new Uint8Array(rollingCode.buffer))); // Додав лог для значення
 
-                var res = await enterCodes.writeValueWithResponse(rollingCode.buffer).catch((e) => {
-                    console.log(e);
-                });
-                console.log(res);
+                    console.log('DaydreamController: Writing rolling code with response...'); // Додав лог
+                    // Цей рядок викликає помилку "GATT operation not supported."
+                    var res = await enterCodes.writeValueWithResponse(rollingCode.buffer);
+                    console.log('DaydreamController: writeValueWithResponse result:', res); // Додав лог
 
-                resolve(res);
+                    resolve(res);
+                } catch (e) {
+                    console.error('DaydreamController: Error in auth():', e); // Змінив на console.error
+                    reject(e); // Відхиляємо проміс у разі помилки
+                }
             });
         };
 
         async connect() {
-            if(this.connected !== false) return false;
+            console.log('DaydreamController: connect() started.'); // Додав лог
+            if(this.connected !== false) {
+                console.log('DaydreamController: Already connected, returning false.'); // Додав лог
+                return false;
+            }
 
-            var controller = await navigator.bluetooth.requestDevice({ filters: [{ name: 'Daydream controller' }], optionalServices: [ 0xfe55 ]});
-            if(controller == undefined) return false;
-            this.controller = controller.gatt;
-            await this.controller.connect(); // Додав await, щоб чекати підключення
+            try {
+                console.log('DaydreamController: Requesting Bluetooth device...'); // Додав лог
+                var controller = await navigator.bluetooth.requestDevice({ filters: [{ name: 'Daydream controller' }], optionalServices: [ 0xfe55 ]});
+                if(controller == undefined) {
+                    console.log('DaydreamController: No device selected or found, returning false.'); // Додав лог
+                    return false;
+                }
+                this.controller = controller.gatt;
+                console.log('DaydreamController: Connecting to GATT server...'); // Додав лог
+                await this.controller.connect(); // Додав await, щоб чекати підключення
+                console.log('DaydreamController: Connected to GATT server. Starting auth...'); // Додав лог
 
-            await this.auth();
+                await this.auth(); // Цей виклик тепер може відхилити проміс
 
-            var service = await this.controller.getPrimaryService( 0xfe55 );
-            var characteristic =  await service.getCharacteristic( '00000001-1000-1000-8000-00805f9b34fb' );
-            
-            characteristic.addEventListener( 'characteristicvaluechanged', this.handleData.bind(this) );
-            characteristic.startNotifications();
+                console.log('DaydreamController: Auth completed. Getting primary service 0xfe55 for notifications...'); // Додав лог
+                var service = await this.controller.getPrimaryService( 0xfe55 );
+                console.log('DaydreamController: Got primary service for notifications. Getting characteristic 00000001...'); // Додав лог
+                var characteristic =  await service.getCharacteristic( '00000001-1000-1000-8000-00805f9b34fb' );
+                
+                console.log('DaydreamController: Got characteristic 00000001. Adding event listener and starting notifications...'); // Додав лог
+                characteristic.addEventListener( 'characteristicvaluechanged', this.handleData.bind(this) );
+                characteristic.startNotifications();
+                console.log('DaydreamController: Notifications started.'); // Додав лог
 
-            this.connected = true;
-            return true;
+                this.connected = true;
+                return true;
+            } catch (error) {
+                console.error('DaydreamController: Error in connect():', error); // Змінив на console.error
+                // Якщо помилка виникла на етапі connect(), то this.connected має бути false
+                this.connected = false; // Переконаємося, що стан коректний
+                return false; // Повертаємо false, оскільки підключення не вдалося
+            }
         };
 
         async disconnect() {
-            if(this.connected !== true) return false;
+            console.log('DaydreamController: disconnect() started.'); // Додав лог
+            if(this.connected !== true) {
+                console.log('DaydreamController: Not connected, returning false.'); // Додав лог
+                return false;
+            }
 
             this.controller.disconnect();
+            console.log('DaydreamController: Disconnected from controller.'); // Додав лог
 
             this.connected = false;
             return true;
@@ -66,6 +104,7 @@
         }
 
         handleData(event) {
+            // console.log('DaydreamController: handleData received data.'); // Додав лог
             var data = event.target.value;
         
             this.isClickDown = (data.getUint8(18) & 0x1) > 0;
@@ -117,11 +156,31 @@
             this.xTouch = ((data.getUint8(16) & 0x1F) << 3 | (data.getUint8(17) & 0xE0) >> 5) / 255.0;
             this.yTouch = ((data.getUint8(17) & 0x1F) << 3 | (data.getUint8(18) & 0xE0) >> 5) / 255.0;
             
-            this.onChangeFunc( this ); // Викликаємо колбек з поточним екземпляром
+            this.onChangeFunc( {
+                isClickDown: this.isClickDown,
+                isAppDown: this.isAppDown,
+                isHomeDown: this.isHomeDown,
+                isVolPlusDown: this.isVolPlusDown,
+                isVolMinusDown: this.isVolMinusDown,
+                time: this.time,
+                seq: this.seq,
+                xOri: this.xOri,
+                yOri: this.yOri,
+                zOri: this.zOri,
+                xAcc: this.xAcc,
+                yAcc: this.yAcc,
+                zAcc: this.zAcc,
+                xGyro: this.xGyro,
+                yGyro: this.yGyro,
+                zGyro: this.zGyro,
+                xTouch: this.xTouch,
+                yTouch: this.yTouch
+            } );
         };
     };
 
     // Робимо клас доступним глобально
     window.DaydreamController = DaydreamController;
+    console.log('DaydreamController: Class defined and assigned to window.'); // Додав лог
 
 })(); // Закінчуємо IIFE
